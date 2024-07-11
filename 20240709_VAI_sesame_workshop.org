@@ -1,6 +1,8 @@
 * Useful links
 This page: https://github.com/zhou-lab/SesameWorkshop-VAI-2024/blob/main/20240709_VAI_sesame_workshop.org
-
+Sesame Bioconductor homepage: https://bioconductor.org/packages/release/bioc/html/sesame.html
+Sesame Bioconductor vignette: https://bioconductor.org/packages/release/bioc/vignettes/sesame/inst/doc/sesame.html
+CytoMethIC Github page: https://github.com/zhou-lab/cytomethic
 
 * Installing R and Sesame
 #+begin_src R
