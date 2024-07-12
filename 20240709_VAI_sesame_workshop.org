@@ -359,5 +359,10 @@ ref = sesameDataGet("MM285.tissueSignature")
 ref = ref[rownames(ref) %in% rownames(se),]
 compareReference(ref, betas=assay(se))
 
+## Copy number
+sdf = sesameDataGet("EPIC.1.SigDF")
+copy_number_profile = cnSegmentation(sdf)
+visualizeSegments(copy_number_profile) ## copy number profile
+
 #+end_src
 
