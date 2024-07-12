@@ -19,6 +19,8 @@ install.packages(“BiocManager”)
 BiocManager::install(“sesame”)
 library(sesame)
 sesameDataCacheAll()
+
+## Verify that it works
 packageVersion(“sesame”)
 ## [1] ‘1.23.7’
 BiocManager::install("zhou-lab/cytomethic")
