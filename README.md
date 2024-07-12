@@ -1,1 +1,370 @@
-# SesameWorkshop-VAI-2024
+* Useful links
+
+This page: https://github.com/zhou-lab/SesameWorkshop-VAI-2024/blob/main/20240709_VAI_sesame_workshop.org
+
+Sesame Bioconductor homepage: https://bioconductor.org/packages/release/bioc/html/sesame.html
+
+Sesame Bioconductor vignette: https://bioconductor.org/packages/release/bioc/vignettes/sesame/inst/doc/sesame.html
+
+SummarizedExperiment: https://www.bioconductor.org/help/course-materials/2019/BSS2019/04_Practical_CoreApproachesInBioconductor.html
+
+CytoMethIC Github page: https://github.com/zhou-lab/cytomethic
+
+* Installing R and Sesame
+#+begin_src R
+
+## Installing SeSAMe:
+## Scripts used in this video:
+install.packages(“BiocManager”)
+BiocManager::install(“sesame”)
+library(sesame)
+sesameDataCacheAll()
+
+## Verify that it works
+packageVersion(“sesame”)
+## [1] ‘1.23.7’
+BiocManager::install("zhou-lab/cytomethic")
+library(CytoMethIC)
+
+sesame_checkVersion()
+## SeSAMe requires matched versions of R, sesame, sesameData and ExperimentHub.
+## Here is the current versions installed:
+## R: 4.4.0
+## Bioconductor: 3.19
+## sesame: 1.23.7
+## sesameData: 1.23.0
+## ExperimentHub: 2.12.0
+
+#+end_src
+
+* Preprocessing methylation levels from IDATs
+#+begin_src R
+
+betas = openSesame("data/MSA") # this directory holds one sample
+head(betas)
+## cg00000109_BC21 cg00000658_TC21 cg00000714_TC21 cg00000721_TC21 cg00000897_BC21 
+##       0.9335602       0.8205561       0.4921804       0.8877555       0.5757496 
+## cg00000914_TC21 
+##       0.4576283
+
+## return a SigDF which holds the signal intensities
+sdf = openSesame("data/MSA", func=NULL) # see sesame vignette for more info about the SigDF columns https://zhou-lab.github.io/sesame/dev/supplemental.html#The_SigDF_Class
+head(sdf)
+##          Probe_ID MG MR        UG         UR col  mask
+## 1 cg00000109_BC21 NA NA  3477.755   247.5057   2 FALSE
+## 2 cg00000658_TC21 NA NA  8459.255  1849.9178   2 FALSE
+## 3 cg00000714_TC21 NA NA 13283.702 13705.7963   2 FALSE
+## 4 cg00000721_TC21 NA NA  4971.755   628.6101   2 FALSE
+## 5 cg00000897_BC21 NA NA 21446.112 15802.9177   2 FALSE
+## 6 cg00000914_TC21 NA NA 12663.089 15008.0319   2 FALSE
+
+betas = openSesame("data/MM285")
+head(betas)
+## cg00101675_BC21 cg00116289_BC21 cg00211372_TC21 cg00531009_BC21 cg00747726_TC21 
+##       0.9415288       0.9307712       0.8919083       0.8758084       0.9489068 
+## cg00896209_TC21 
+##       0.9001564
+
+betas = openSesame("data/EPICv2") # this directory holds more than one samples
+head(betas)
+##                 206909630014_R05C01 206909630025_R03C01 206909630040_R03C01
+## cg00000029_TC21           0.8787276           0.8386201          0.94521000
+## cg00000109_TC21           0.9435672           0.9273993          0.94961566
+## cg00000155_BC21           0.9540730           0.9489915          0.94873183
+## cg00000158_BC21           0.9526904           0.9604832          0.96426360
+## cg00000165_TC21           0.1781422           0.1586014          0.07559903
+## cg00000221_BC21           0.9095751           0.9031900          0.47811345
+##                 206909630041_R03C01 206909630042_R08C01
+## cg00000029_TC21           0.7170721           0.9606021
+## cg00000109_TC21           0.9488012           0.9591817
+## cg00000155_BC21           0.9532882           0.9472896
+## cg00000158_BC21           0.9380924           0.9787378
+## cg00000165_TC21           0.1811463           0.0896530
+## cg00000221_BC21           0.9055534           0.4548951
+dim(betas)
+## [1] 937690      5
+
+## remove suffix
+betas = openSesame("data/MSA")
+sum(is.na(betas)) # some probes have NA in readings, they are being masked. Masking comes from quality and detection.
+## 15581
+
+## openSesame handles background subtraction, dye bias correction in addition to masking
+## the preprocessing is controlled by the prep= arguments.
+prepSesameList()
+##    code                  func                         description
+## 1     0             resetMask             Reset mask to all FALSE
+## 2     Q           qualityMask          Mask probes of poor design
+## 3     G       prefixMaskButCG             Mask all but cg- probes
+## 4     H        prefixMaskButC      Mask all but cg- and ch-probes
+## 5     C inferInfiniumIChannel Infer channel for Infinium-I probes
+## 6     D             dyeBiasNL    Dye bias correction (non-linear)
+## 7     E              dyeBiasL        Dye bias correction (linear)
+## 8     P                pOOBAH Detection p-value masking using oob
+## 9     I                 ELBAR  Mask background-dominated readings
+## 10    B                  noob    Background subtraction using oob
+## 11    S          inferSpecies           Set species-specific mask
+## 12    T           inferStrain    Set strain-specific mask (mouse)
+## 13    M           matchDesign Match Inf-I/II in beta distribution
+
+## the following function shows what each prep code does to normalization
+sdf = openSesame("data/MSA", prep="", func=NULL)
+sesameQC_plotBetaByDesign(sdf, prep="QCDPBM")
+
+#+end_src
+
+* Data quality control
+
+#+begin_src R
+
+betas = openSesame("data/MSA") # this directory holds one sample
+plot(density(na.omit(betas))) # the bimodal distribution of beta values
+
+qc = openSesame("data/MSA", func=sesameQC_calcStats)
+qc
+
+## =====================
+## | Detection 
+## =====================
+## N. Probes w/ Missing Raw Intensity   : 2 (num_dtna)
+## % Probes w/ Missing Raw Intensity    : 0.0 % (frac_dtna)
+## N. Probes w/ Detection Success       : 269650 (num_dt)
+## % Detection Success                  : 94.5 % (frac_dt)
+## N. Detection Succ. (after masking)   : 269650 (num_dt_mk)
+## % Detection Succ. (after masking)    : 100.0 % (frac_dt_mk)
+## N. Probes w/ Detection Success (cg)  : 262364 (num_dt_cg)
+## % Detection Success (cg)             : 95.5 % (frac_dt_cg)
+## N. Probes w/ Detection Success (ch)  : 2371 (num_dt_ch)
+## % Detection Success (ch)             : 85.3 % (frac_dt_ch)
+## N. Probes w/ Detection Success (rs)  : 3915 (num_dt_rs)
+## % Detection Success (rs)             : 89.7 % (frac_dt_rs)
+
+## =====================
+## | Signal Intensity 
+## =====================
+## Mean sig. intensity          : 4873.12 (mean_intensity)
+## Mean sig. intensity (M+U)    : 9277.99 (mean_intensity_MU)
+## Mean sig. intensity (Inf.II) : 4550.60 (mean_ii)
+## Mean sig. intens.(I.Grn IB)  : 4908.77 (mean_inb_grn)
+## Mean sig. intens.(I.Red IB)  : 4844.95 (mean_inb_red)
+## Mean sig. intens.(I.Grn OOB) : 330.16 (mean_oob_grn)
+## Mean sig. intens.(I.Red OOB) : 615.87 (mean_oob_red)
+## N. NA in M (all probes)      : 0 (na_intensity_M)
+## N. NA in U (all probes)      : 0 (na_intensity_U)
+## N. NA in raw intensity (IG)  : 0 (na_intensity_ig)
+## N. NA in raw intensity (IR)  : 0 (na_intensity_ir)
+## N. NA in raw intensity (II)  : 4 (na_intensity_ii)
+
+## =====================
+## | Number of Probes 
+## =====================
+## N. Probes          : 285231 (num_probes)
+## N. Inf.-II Probes  : 207800 (num_probes_II)
+## N. Inf.-I (Red)    : 39475 (num_probes_IR)
+## N. Inf.-I (Grn)    : 37956 (num_probes_IG)
+## N. Probes (CG)     : 274661 (num_probes_cg)
+## N. Probes (CH)     : 2781 (num_probes_ch)
+## N. Probes (RS)     : 4364 (num_probes_rs)
+
+## =====================
+## | Color Channel 
+## =====================
+## N. Inf.I Probes Red -> Red  : 39475 (InfI_switch_R2R)
+## N. Inf.I Probes Grn -> Grn  : 37330 (InfI_switch_G2G)
+## N. Inf.I Probes Red -> Grn  : 0 (InfI_switch_R2G)
+## N. Inf.I Probes Grn -> Red  : 626 (InfI_switch_G2R)
+
+## =====================
+## | Dye Bias 
+## =====================
+## Median Inf.I Intens. Red            : 9048.86 (medR)
+## Median Inf.I Intens. Grn            : 9287.47 (medG)
+## Median of Top 20 Inf.I Intens. Red  : 49188.27 (topR)
+## Median of Top 20 Inf.I Intens. Grn  : 49052.77 (topG)
+## Ratio of Red-to-Grn median Intens.  : 0.97 (RGratio)
+## Ratio of Top vs. Global R/G Ratios  : 1.03 (RGdistort)
+
+## =====================
+## | Beta Value 
+## =====================
+## Mean Beta            : 0.47 (mean_beta)
+## Median Beta          : 0.47 (median_beta)
+## % Beta < 0.3         : 41.8 % (frac_unmeth)
+## % Beta > 0.7         : 35.0 % (frac_meth)
+## N. is.na(Beta)       : 15581 (num_na)
+## % is.na(Beta)        : 5.5 % (frac_na)
+## Mean Beta (CG)       : 0.47 (mean_beta_cg)
+## Median Beta (CG)     : 0.47 (median_beta_cg)
+## % Beta < 0.3 (CG)    : 41.4 % (frac_unmeth_cg)
+## % Beta > 0.7 (CG)    : 35.3 % (frac_meth_cg)
+## N. is.na(Beta) (CG)  : 12297 (num_na_cg)
+## % is.na(Beta) (CG)   : 4.5 % (frac_na_cg)
+## Mean Beta (CH)       : 0.07 (mean_beta_ch)
+## Median Beta (CH)     : 0.02 (median_beta_ch)
+## % Beta < 0.3 (CH)    : 96.2 % (frac_unmeth_ch)
+## % Beta > 0.7 (CH)    : 1.3 % (frac_meth_ch)
+## N. is.na(Beta) (CH)  : 410 (num_na_ch)
+## % is.na(Beta) (CH)   : 14.7 % (frac_na_ch)
+## Mean Beta (RS)       : 0.51 (mean_beta_rs)
+## Median Beta (RS)     : 0.53 (median_beta_rs)
+## % Beta < 0.3 (RS)    : 35.1 % (frac_unmeth_rs)
+## % Beta > 0.7 (RS)    : 36.3 % (frac_meth_rs)
+## N. is.na(Beta) (RS)  : 449 (num_na_rs)
+## % is.na(Beta) (RS)   : 10.3 % (frac_na_rs)
+
+qcs = openSesame("data/EPICv2", func=sesameQC_calcStats, BPPARAM=BiocParallel::MulticoreParam(2))
+sesameQCtoDF(qcs)
+##                  IDAT frac_dt_cg   RGratio RGdistort
+## 1 206909630014_R05C01  0.9592007 0.9983407  1.320268
+## 2 206909630025_R03C01  0.9764512 0.9983262  1.350290
+## 3 206909630040_R03C01  0.9792811 1.0068614  1.374349
+## 4 206909630041_R03C01  0.9246870 0.9956625  1.328428
+## 5 206909630042_R08C01  0.9873646 1.0056178  1.317888
+
+sdf = openSesame("data/MSA", func=NULL)
+sesameQC_plotIntensVsBetas(sdf)
+
+#+end_src
+
+* Differential Methylation Modeling & Functional Enrichment
+
+#+begin_src R
+
+se = readRDS("data/540_MM285_samples_10k.rds")
+colData(se) |> as_tibble() |> dplyr::select(IDAT, Sex)
+##    IDAT                Sex   
+##    <chr>               <chr> 
+##  1 204637490023_R01C01 Male  
+##  2 204637490023_R01C02 Female
+##  3 204637490023_R02C01 Male  
+##  4 204637490023_R03C01 Male  
+##  5 204637490023_R05C01 Female
+##  6 204637490023_R06C01 Female
+##  7 204875570010_R04C02 Male  
+##  8 204875570010_R05C02 Male  
+##  9 204875570010_R06C02 Male  
+## 10 204875570047_R02C01 Female
+
+colData(se)$Sex <- relevel(factor(colData(se)$Sex), "Female")
+se_ok = checkLevels(assay(se), colData(se)$Sex)
+nrow(se)
+## 10000
+sum(se_ok)
+## 9400
+se = se[se_ok, ]
+smry = DML(se, ~Sex, BPPARAM=BiocParallel::MulticoreParam(4))
+res = summaryExtractTest(smry)
+head(res)
+
+probes = res$Probe_ID[p.adjust(res$Pval_SexMale)<0.05 & res$Est_SexMale > 0]
+res_enrich = testEnrichment(probes, "chromosome")
+KYCG_plotDot(res_enrich) # expect chrX and chrY
+
+probes = res$Probe_ID[p.adjust(res$Pval_SexMale)<0.05 & res$Est_SexMale < 0]
+res_enrich = testEnrichment(probes, "designGroup")
+KYCG_plotDot(res_enrich) # expect CpG island
+
+colData(se) |> as_tibble() |> dplyr::select(IDAT, Tissue) |> with(table(Tissue))
+##              Cecum              Colon          Esophagus                Fat 
+##                  7                 27                  9                  4 
+##        Fetal Brain    Fetal Intestine         Fetal Limb        Fetal Liver 
+##                 11                  9                 10                 11 
+## Frontal Lobe Brain              Heart         Hind Brain             Kidney 
+##                 56                 11                  8                 12 
+##              Liver               Lung        Lymphocytes               MDSC 
+##                 92                 14                 46                  4 
+##          Monocytes             Muscle        Neutrophils              Ovary 
+##                 14                  8                  4                  4 
+##           Placenta    Small Intestine             Spleen            Stomach 
+##                 16                 27                 57                 17 
+##               Tail             Testis 
+##                 58                  4
+se = readRDS("data/540_MM285_samples_10k.rds")
+colData(se)$Tissue <- relevel(factor(colData(se)$Tissue), "Lymphocytes")
+se_ok = checkLevels(assay(se), colData(se)$Tissue)
+nrow(se)
+## 10000
+sum(se_ok)
+## 9196
+se = se[se_ok, ]
+smry = DML(se, ~Tissue, BPPARAM=BiocParallel::MulticoreParam(4))
+res = summaryExtractTest(smry)
+head(res)
+
+probes = res$Probe_ID[p.adjust(res$FPval_Tissue)<0.05]
+res_enrich = testEnrichment(probes, "designGroup")
+KYCG_plotDot(res_enrich) # expect Enhancer
+
+colnames(res)
+probes = res$Probe_ID[p.adjust(res$Pval_TissueLiver)<0.05 & res$Est_TissueLiver > 0]
+res_enrich = testEnrichment(probes, "designGroup")
+KYCG_plotDot(res_enrich) # expect Enhancer
+res_enrich = testEnrichment(probes, "tissue")
+KYCG_plotDot(res_enrich) # expect T cell hypometh
+
+probes = res$Probe_ID[p.adjust(res$Pval_TissueLiver)<0.05 & res$Est_TissueLiver < 0]
+res_enrich = testEnrichment(probes, "designGroup")
+KYCG_plotDot(res_enrich) # expect Enhancer
+res_enrich = testEnrichment(probes, "tissue")
+KYCG_plotDot(res_enrich) # expect hepatocyte hypometh
+
+#+end_src
+
+* Meta data inference
+
+#+begin_src R
+
+model = readRDS("model/Age_MM285_20230101.rds")
+betas = openSesame("data/MM285", mask=FALSE)
+cmi_predict(betas, model)
+## 158.6064 (days)
+
+model = readRDS("model/Sex2_MM285_20240114.rds")
+betas = openSesame("data/MM285", mask=FALSE)
+cmi_predict(betas, model)
+
+se = readRDS("data/540_MM285_samples_10k.rds")
+model = readRDS("model/Sex2_MM285_20240114.rds")
+betas = imputeBetasMatrixByMean(assay(se))
+predicted_sex = bind_rows(cmi_predict(betas, model))
+table(colData(se)$Sex, predicted_sex$sex) # error likely comes from down-sampling
+##        FEMALE MALE
+## Female    270   10
+## Male        2  258
+
+model = readRDS("model/FoundationCancerTypeV1_InfHum3.rds")
+betas = sesameDataGet("HM450.1.TCGA.PAAD")$betas
+betas = imputeBetas(betas)
+cmi_predict(betas, model)
+##   response prob          additional_info                                        
+##   <chr>    <chr>         <chr>                                                  
+## 1 PAAD     L:0.95,P:0.82 Probs: 0.82,0.95,0.98; Chain: PAAD (0.95) > CESC_AC,CO…
+
+model = readRDS("model/Age_Horvath353_HM450.rds")
+sdfs = sesameDataGet("EPICv2.8.SigDF")
+betas = openSesame(sdfs[1:2])
+betas_hm450 = mLiftOver(betas, "HM450")
+betas_hm450 = imputeBetas(betas_hm450)
+bind_rows(cmi_predict(betas_hm450, model))
+## response prob  additional_info
+##      <dbl> <lgl>           <dbl>
+## 1     28.4 NA              0.399
+## 2     27.8 NA              0.373
+
+sdf = openSesame("data/MM285", mask=FALSE, func=NULL)
+inferStrain(sdf, return.strain=TRUE)
+## C57BL_6J
+
+## infer tissue type by comparing to reference methylomes
+se = readRDS("data/540_MM285_samples_10k.rds")
+ref = sesameDataGet("MM285.tissueSignature")
+ref = ref[rownames(ref) %in% rownames(se),]
+compareReference(ref, betas=assay(se))
+
+## Copy number
+sdf = sesameDataGet("EPIC.1.SigDF")
+copy_number_profile = cnSegmentation(sdf)
+visualizeSegments(copy_number_profile) ## copy number profile
+
+#+end_src
+
